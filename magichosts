@@ -1,0 +1,101 @@
+#!/bin/bash
+
+# Magic Hosts Switcher
+# Automatically detects a target network and turns on/off LAN routing in
+# your /etc/hosts file accordingly.
+#
+# Setup: In your root crontab, add and edit the following...
+#     * * * * * /path/to/magic_hosts
+#
+# AUTHOR(S): Jason C. McDonald
+# VERSION: 1.2
+# LAST UPDATED: 27 April 2018
+
+# Copyright (c) 2018 Jason C. McDonald
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#     * Redistributions of source code must retain the above copyright
+#       notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above copyright
+#       notice, this list of conditions and the following disclaimer in the
+#       documentation and/or other materials provided with the distribution.
+#     * Neither the name of the <organization> nor the
+#       names of its contributors may be used to endorse or promote products
+#       derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+# DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+##### CHANGE ME: Watch for a network with this name! #####
+
+NETWORK="MyWiFiNetwork"
+
+##########################################################
+
+# Store a sentinel file here
+SENTINEL='/tmp/.magic_host_run'
+
+# If we're not root, just abort.
+if [ "$EUID" -ne 0 ]
+then
+    echo "Please run as root"
+    exit
+fi
+
+# Check if we're on the target network
+athome=`/sbin/iwconfig 2>&1 | grep -c ${NETWORK}`
+nowifi=`/sbin/iwconfig 2>&1 | grep -c 'ESSID:off/any'`
+
+# If the senintel file exists...
+if [ -e ${SENTINEL} ]
+then
+    # Load our previous value from it
+    stored=`cat ${SENTINEL}`
+else
+    # Otherwise, store our new value to it...
+    echo ${athome} > ${SENTINEL}
+    # ...but make sure we DO make the change below.
+    stored='-1'
+fi
+
+# If we haven't changed networks since last time...
+if (( athome == stored ))
+then
+    # Report that all is well and exit.
+    echo "No change made"
+    exit
+# If we don't have a network connection...
+elif [ ${nowifi} -eq 1 ]
+then
+    # Do nothing and exit
+    echo "No wifi; no change made"
+    exit
+# Otherwise, if we changed networks...
+else
+    # Backup our /etc/hosts file
+    cp /etc/hosts /etc/hosts.bak
+    # If we're on the target network...
+    if [ ${athome} -eq 1 ]
+    then
+        # Turn on our routing by LAN IP
+        echo "Enabled LAN routing"
+        sed -i -E 's/#+192/192/' /etc/hosts
+    # Otherwise, if we're on another network...
+    else
+        # Shut off our routing by LAN IP
+        echo "Disabled LAN routing"
+        sed -i 's/192/#192/' /etc/hosts
+    fi
+    # Store whether we were on target network
+    echo ${athome} > ${SENTINEL}
+fi
